@@ -1,0 +1,38 @@
+id = "blockedpath.amp-orbs"
+name = "Amp Orbs"
+version = "0.1.0"
+min_herdr_version = "0.9.3"
+description = "Run Amp orbs (remote Amp agents) in Herdr panes: start new orbs, attach to running ones, pull their changes"
+platforms = ["linux", "macos"]
+
+[[actions]]
+id = "new"
+title = "New Amp orb"
+contexts = ["workspace"]
+command = ["bash", "orb.sh", "new"]
+
+[[actions]]
+id = "pick"
+title = "Amp orbs: attach, sync, browse"
+contexts = ["workspace"]
+command = ["bash", "orb.sh", "open-picker"]
+
+[[actions]]
+id = "open-thread"
+title = "Open Amp thread (clicked or selected) in a pane"
+contexts = ["workspace"]
+command = ["bash", "orb.sh", "open-thread"]
+
+[[panes]]
+id = "picker"
+title = "Amp orbs"
+placement = "popup"
+width = "85%"
+height = "70%"
+command = ["bash", "orb.sh", "picker"]
+
+[[link_handlers]]
+id = "thread-url"
+title = "Open Amp thread in Herdr"
+pattern = "^https://ampcode\\.com/threads/T-[0-9a-fA-F-]+"
+action = "open-thread"
