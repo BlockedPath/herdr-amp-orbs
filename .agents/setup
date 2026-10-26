@@ -26,14 +26,36 @@ else
 fi
 
 # --- herdr CLI ------------------------------------------------------------
-# The plugin's host program. The installer puts the binary in ~/.local/bin,
-# which is already on the orb's login PATH.
+# The plugin's host program, pinned so every orb tests against the same
+# version. herdr.dev/install.sh only installs the latest release, so download
+# the release binary directly. ~/.local/bin is already on the orb's login PATH.
 step "herdr CLI"
-if [ -x "$HOME/.local/bin/herdr" ]; then
-  echo "herdr already installed: $("$HOME/.local/bin/herdr" --version)"
+herdr_version=0.9.5
+herdr_bin="$HOME/.local/bin/herdr"
+if [ "$("$herdr_bin" --version 2>/dev/null)" = "herdr $herdr_version" ]; then
+  echo "herdr $herdr_version already installed"
 else
-  curl -fsSL https://herdr.dev/install.sh | sh
-  "$HOME/.local/bin/herdr" --version
+  case "$(uname -m)" in
+    x86_64)
+      herdr_target=linux-x86_64
+      herdr_sha256=14d9e8bc8b4a9e0118d77c32266f76d461f09b40342eb23752960bd89f59929d
+      ;;
+    aarch64 | arm64)
+      herdr_target=linux-aarch64
+      herdr_sha256=17d7536f2da50859523680ef279dffcac8e4a235f4e46fe8da6c2ec44141897c
+      ;;
+    *)
+      echo "no pinned herdr binary for $(uname -m)" >&2
+      exit 1
+      ;;
+  esac
+  mkdir -p "$(dirname "$herdr_bin")"
+  curl -fsSL --retry 3 -o "$herdr_bin.tmp" \
+    "https://github.com/herdrdev/herdr/releases/download/v$herdr_version/herdr-$herdr_target"
+  echo "$herdr_sha256  $herdr_bin.tmp" | sha256sum -c -
+  chmod +x "$herdr_bin.tmp"
+  mv "$herdr_bin.tmp" "$herdr_bin"
+  "$herdr_bin" --version
 fi
 
 # --- Orb notes for agents -------------------------------------------------
