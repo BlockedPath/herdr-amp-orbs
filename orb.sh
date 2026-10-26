@@ -228,6 +228,22 @@ cmd_list() {
     | @tsv'
 }
 
+# The picker keeps its scope ("orbs" or "all") in $ORB_SCOPE_FILE, so ctrl-r
+# reloads the list that is showing.
+picker_scope() {
+  local scope=""
+  [ -n "${ORB_SCOPE_FILE:-}" ] && scope="$(cat "$ORB_SCOPE_FILE" 2>/dev/null)"
+  echo "${scope:-orbs}"
+}
+
+# ctrl-a: switches the picker scope and prints the matching fzf prompt.
+cmd_toggle_scope() {
+  case "$(picker_scope)" in
+    all) echo orbs >"$ORB_SCOPE_FILE" && echo 'orb> ' ;;
+    *) echo all >"$ORB_SCOPE_FILE" && echo 'all> ' ;;
+  esac
+}
+
 cmd_preview() {
   "$AMP" threads markdown "$1" </dev/null 2>&1 | tail -n 150
 }
@@ -276,19 +292,24 @@ cmd_picker() {
     exit 1
   }
   command -v open >/dev/null 2>&1 || opener=xdg-open
+  ORB_SCOPE_FILE="$(mktemp)" || exit 1
+  export ORB_SCOPE_FILE
+  trap 'rm -f "$ORB_SCOPE_FILE"' EXIT
 
-  FZF_DEFAULT_COMMAND="bash '$SELF' list orbs" "$fzf" \
+  # ctrl-a runs transform-prompt first: it blocks until the scope file is
+  # written, so the reload after it reads the new scope.
+  FZF_DEFAULT_COMMAND="bash '$SELF' list" "$fzf" \
     --delimiter '\t' --with-nth 2 --no-sort --layout reverse \
     --prompt 'orb> ' \
-    --header "enter attach · ctrl-n new orb · ctrl-s sync into $(target_cwd) · ctrl-o browser · ctrl-a all threads · ctrl-r refresh" \
+    --header "enter attach · ctrl-n new orb · ctrl-s sync into $(target_cwd) · ctrl-o browser · ctrl-a orbs/all threads · ctrl-r refresh" \
     --preview "bash '$SELF' preview {1}" \
     --preview-window 'right,40%,wrap,follow' \
     --bind "enter:become(bash '$SELF' attach {1})" \
     --bind "ctrl-n:become(bash '$SELF' new)" \
     --bind "ctrl-s:become(bash '$SELF' sync {1})" \
     --bind "ctrl-o:execute-silent($opener https://ampcode.com/threads/{1})" \
-    --bind "ctrl-a:reload(bash '$SELF' list all)" \
-    --bind "ctrl-r:reload(bash '$SELF' list orbs)"
+    --bind "ctrl-a:transform-prompt(bash '$SELF' toggle-scope)+reload(bash '$SELF' list)" \
+    --bind "ctrl-r:reload(bash '$SELF' list)"
 }
 
 case "${1:-}" in
@@ -297,11 +318,12 @@ case "${1:-}" in
   open-thread) cmd_open_thread ;;
   open-picker) cmd_open_picker ;;
   picker) cmd_picker ;;
-  list) cmd_list "${2:-orbs}" ;;
+  list) cmd_list "${2:-$(picker_scope)}" ;;
+  toggle-scope) cmd_toggle_scope ;;
   preview) cmd_preview "${2:?thread id}" ;;
   sync) cmd_sync "${2:?thread id}" ;;
   *)
-    echo "usage: orb.sh new | attach <T-…> | open-thread | open-picker | picker | list [orbs|all] | preview <T-…> | sync <T-…>" >&2
+    echo "usage: orb.sh new | attach <T-…> | open-thread | open-picker | picker | list [orbs|all] | toggle-scope | preview <T-…> | sync <T-…>" >&2
     exit 2
     ;;
 esac
