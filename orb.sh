@@ -18,9 +18,9 @@ CTX="${HERDR_PLUGIN_CONTEXT_JSON:-}"
 [ -n "$CTX" ] || CTX='{}'
 
 # Defaults; override in $HERDR_PLUGIN_CONFIG_DIR/config.env.
-ORB_PLACEMENT=split # split | tab
-ORB_SPLIT=auto      # auto | right | down (split placement only)
-ORB_NEW_ARGS=""     # extra amp args for new orbs, e.g. "--mode high"
+ORB_PLACEMENT="split" # split | tab
+ORB_SPLIT=auto        # auto | right | down (split placement only)
+ORB_NEW_ARGS=""       # extra amp args for new orbs, e.g. "--mode high"
 if [ -n "${HERDR_PLUGIN_CONFIG_DIR:-}" ] && [ -f "$HERDR_PLUGIN_CONFIG_DIR/config.env" ]; then
   # shellcheck disable=SC1091
   . "$HERDR_PLUGIN_CONFIG_DIR/config.env"
