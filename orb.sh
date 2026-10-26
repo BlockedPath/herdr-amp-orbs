@@ -161,7 +161,7 @@ cmd_open_thread() {
   cmd_attach "$id"
 }
 
-# First non-empty `amp top` snapshot, or nothing after 1.5 seconds.
+# First non-empty `amp top` snapshot, or nothing after 2 seconds.
 # `amp top` never exits on its own, so it runs in the background and is killed.
 # The deadline is a background sleep so the time jq takes per poll counts too.
 top_snapshot() {
@@ -169,7 +169,7 @@ top_snapshot() {
   tmp="$(mktemp)" || return 0
   "$AMP" top --stream-jsonl </dev/null >"$tmp" 2>/dev/null &
   pid=$!
-  sleep 1.5 &
+  sleep 2 &
   timer=$!
   while kill -0 "$timer" 2>/dev/null; do
     line="$(jq -c 'select((.threads | length) > 0)' "$tmp" 2>/dev/null | head -1)"
