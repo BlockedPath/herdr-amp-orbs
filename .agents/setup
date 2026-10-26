@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Prepares a fresh Amp orb for this repository. Idempotent: safe to rerun on a
+# stale snapshot. Installs the plugin's runtime (bash, jq, fzf, herdr CLI) and
+# a linter for orb.sh. The amp CLI is part of the orb image.
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+
+step() { printf '\n==> %s (%ss elapsed)\n' "$1" "$SECONDS"; }
+
+# --- System packages ------------------------------------------------------
+# jq parses context and JSON in orb.sh, fzf drives the orb picker popup, and
+# the linter checks orb.sh.
+step "system packages"
+missing=()
+for pkg in jq fzf shellcheck; do
+  dpkg -s "$pkg" >/dev/null 2>&1 || missing+=("$pkg")
+done
+if [ "${#missing[@]}" -gt 0 ]; then
+  export DEBIAN_FRONTEND=noninteractive
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq "${missing[@]}"
+else
+  echo "jq, fzf and shellcheck already installed"
+fi
+
+# --- herdr CLI ------------------------------------------------------------
+# The plugin's host program. The installer puts the binary in ~/.local/bin,
+# which is already on the orb's login PATH.
+step "herdr CLI"
+if [ -x "$HOME/.local/bin/herdr" ]; then
+  echo "herdr already installed: $("$HOME/.local/bin/herdr" --version)"
+else
+  curl -fsSL https://herdr.dev/install.sh | sh
+  "$HOME/.local/bin/herdr" --version
+fi
+
+# --- Orb notes for agents -------------------------------------------------
+# No herdr server runs in a fresh orb, and one started from the Amp CLI dies
+# when the CLI restarts, so tell agents to run it as a supervised service.
+step "agent notes"
+agents_md="$HOME/.config/amp/AGENTS.md"
+notes_marker="## herdr-amp-orbs orb"
+if grep -Fqx "$notes_marker" "$agents_md" 2>/dev/null; then
+  echo "already in $agents_md"
+else
+  mkdir -p "$(dirname "$agents_md")"
+  cat >> "$agents_md" <<EOF
+
+$notes_marker
+
+- \`jq\`, \`fzf\`, \`shellcheck\`, and the \`herdr\` CLI are installed. Lint with \`shellcheck $repo_root/orb.sh\`.
+- No herdr server runs by default. To exercise the plugin, start one with \`amp orb service start herdr --command 'herdr server'\`, then run \`herdr plugin link $repo_root\`.
+EOF
+  echo "appended to $agents_md"
+fi
+
+step "done"
