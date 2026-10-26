@@ -123,13 +123,6 @@ open_amp_pane() {
   "$HERDR" agent focus "$name" >/dev/null 2>&1 || true
 }
 
-thread_title() {
-  local title
-  title="$("$AMP" threads list --json --limit 100 </dev/null 2>/dev/null |
-    jq -r --arg id "$1" '.[] | select(.id == $id) | .title' 2>/dev/null | head -1)"
-  [ -n "$title" ] && echo "$title" || echo "$1"
-}
-
 cmd_new() {
   # ORB_NEW_ARGS is split into words on purpose.
   # shellcheck disable=SC2086
@@ -137,7 +130,7 @@ cmd_new() {
 }
 
 cmd_attach() {
-  local id=$1 title=${2:-} name executor
+  local id=$1 name meta executor title
   name="$(agent_name "$id")"
   # Already open in this session: jump to it instead of attaching twice.
   if "$HERDR" agent get "$name" >/dev/null 2>&1; then
@@ -146,10 +139,14 @@ cmd_attach() {
   fi
   # Orb threads have executorType "sandbox". Attaching the TUI to any other
   # thread makes this machine its executor, so its tools would run here.
-  executor="$("$AMP" threads export "$id" </dev/null 2>/dev/null | jq -r '.meta.executorType // empty')"
+  # The same export supplies the pane label: "<executor type> TAB <title>".
+  meta="$("$AMP" threads export "$id" </dev/null 2>/dev/null |
+    jq -r '(.meta.executorType // "") + "\t" + ((.title // "") | gsub("[\\t\\r\\n]+"; " "))')"
+  executor="${meta%%$'\t'*}"
+  title="${meta#*$'\t'}"
   [ "$executor" = sandbox ] ||
     die "$id is not an orb thread (executor: ${executor:-unknown}); not attaching"
-  [ -n "$title" ] || title="$(thread_title "$id")"
+  [ -n "$title" ] || title=$id
   open_amp_pane "$name" "$title" threads continue "$id"
 }
 
@@ -164,21 +161,23 @@ cmd_open_thread() {
   cmd_attach "$id"
 }
 
-# First non-empty `amp top` snapshot, or nothing after about 3 seconds.
+# First non-empty `amp top` snapshot, or nothing after 1.5 seconds.
 # `amp top` never exits on its own, so it runs in the background and is killed.
+# The deadline is a background sleep so the time jq takes per poll counts too.
 top_snapshot() {
-  local tmp pid i=0 line=""
+  local tmp pid timer line=""
   tmp="$(mktemp)" || return 0
   "$AMP" top --stream-jsonl </dev/null >"$tmp" 2>/dev/null &
   pid=$!
-  while [ $i -lt 30 ]; do
+  sleep 1.5 &
+  timer=$!
+  while kill -0 "$timer" 2>/dev/null; do
     line="$(jq -c 'select((.threads | length) > 0)' "$tmp" 2>/dev/null | head -1)"
     [ -n "$line" ] && break
     sleep 0.1
-    i=$((i + 1))
   done
-  kill "$pid" 2>/dev/null
-  wait "$pid" 2>/dev/null
+  kill "$pid" "$timer" 2>/dev/null
+  wait "$pid" "$timer" 2>/dev/null
   rm -f "$tmp"
   echo "$line"
 }
@@ -188,10 +187,15 @@ top_snapshot() {
 # the list did not return; "all" keeps every thread. The path is only a cheap
 # filter: cmd_attach checks the real executor type before attaching.
 cmd_list() {
-  local scope=${1:-orbs} top threads agents
+  local scope=${1:-orbs} top threads agents list_tmp list_pid
+  # Fetch the thread list while top_snapshot waits for live state.
+  list_tmp="$(mktemp)" || return 1
+  "$AMP" threads list --json --limit 60 </dev/null >"$list_tmp" 2>/dev/null &
+  list_pid=$!
   top="$(top_snapshot)"
   [ -n "$top" ] || top='{"threads":[]}'
-  threads="$("$AMP" threads list --json --limit 60 </dev/null 2>/dev/null)" || threads='[]'
+  if wait "$list_pid"; then threads="$(cat "$list_tmp")"; else threads='[]'; fi
+  rm -f "$list_tmp"
   [ -n "$threads" ] || threads='[]'
   agents="$("$HERDR" agent list 2>/dev/null | jq -c '[.result.agents[]?.name // empty]' 2>/dev/null)" || agents='[]'
   [ -n "$agents" ] || agents='[]'
@@ -222,6 +226,22 @@ cmd_list() {
          + (if ($agents | index($name)) then "  ⧉ open" else "" end))
       ]
     | @tsv'
+}
+
+# The picker keeps its scope ("orbs" or "all") in $ORB_SCOPE_FILE, so ctrl-r
+# reloads the list that is showing.
+picker_scope() {
+  local scope=""
+  [ -n "${ORB_SCOPE_FILE:-}" ] && scope="$(cat "$ORB_SCOPE_FILE" 2>/dev/null)"
+  echo "${scope:-orbs}"
+}
+
+# ctrl-a: switches the picker scope and prints the matching fzf prompt.
+cmd_toggle_scope() {
+  case "$(picker_scope)" in
+    all) echo orbs >"$ORB_SCOPE_FILE" && echo 'orb> ' ;;
+    *) echo all >"$ORB_SCOPE_FILE" && echo 'all> ' ;;
+  esac
 }
 
 cmd_preview() {
@@ -272,32 +292,38 @@ cmd_picker() {
     exit 1
   }
   command -v open >/dev/null 2>&1 || opener=xdg-open
+  ORB_SCOPE_FILE="$(mktemp)" || exit 1
+  export ORB_SCOPE_FILE
+  trap 'rm -f "$ORB_SCOPE_FILE"' EXIT
 
-  FZF_DEFAULT_COMMAND="bash '$SELF' list orbs" "$fzf" \
+  # ctrl-a runs transform-prompt first: it blocks until the scope file is
+  # written, so the reload after it reads the new scope.
+  FZF_DEFAULT_COMMAND="bash '$SELF' list" "$fzf" \
     --delimiter '\t' --with-nth 2 --no-sort --layout reverse \
     --prompt 'orb> ' \
-    --header "enter attach · ctrl-n new orb · ctrl-s sync into $(target_cwd) · ctrl-o browser · ctrl-a all threads · ctrl-r refresh" \
+    --header "enter attach · ctrl-n new orb · ctrl-s sync into $(target_cwd) · ctrl-o browser · ctrl-a orbs/all threads · ctrl-r refresh" \
     --preview "bash '$SELF' preview {1}" \
     --preview-window 'right,40%,wrap,follow' \
     --bind "enter:become(bash '$SELF' attach {1})" \
     --bind "ctrl-n:become(bash '$SELF' new)" \
     --bind "ctrl-s:become(bash '$SELF' sync {1})" \
     --bind "ctrl-o:execute-silent($opener https://ampcode.com/threads/{1})" \
-    --bind "ctrl-a:reload(bash '$SELF' list all)" \
-    --bind "ctrl-r:reload(bash '$SELF' list orbs)"
+    --bind "ctrl-a:transform-prompt(bash '$SELF' toggle-scope)+reload(bash '$SELF' list)" \
+    --bind "ctrl-r:reload(bash '$SELF' list)"
 }
 
 case "${1:-}" in
   new) cmd_new ;;
-  attach) cmd_attach "${2:?thread id}" "${3:-}" ;;
+  attach) cmd_attach "${2:?thread id}" ;;
   open-thread) cmd_open_thread ;;
   open-picker) cmd_open_picker ;;
   picker) cmd_picker ;;
-  list) cmd_list "${2:-orbs}" ;;
+  list) cmd_list "${2:-$(picker_scope)}" ;;
+  toggle-scope) cmd_toggle_scope ;;
   preview) cmd_preview "${2:?thread id}" ;;
   sync) cmd_sync "${2:?thread id}" ;;
   *)
-    echo "usage: orb.sh new | attach <T-…> [title] | open-thread | open-picker | picker | list [orbs|all] | preview <T-…> | sync <T-…>" >&2
+    echo "usage: orb.sh new | attach <T-…> | open-thread | open-picker | picker | list [orbs|all] | toggle-scope | preview <T-…> | sync <T-…>" >&2
     exit 2
     ;;
 esac

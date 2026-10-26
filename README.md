@@ -21,8 +21,8 @@ Keys in the orb popup:
 | `ctrl-n` | New orb |
 | `ctrl-s` | Apply the orb's working-tree changes once to the focused pane's checkout (`amp sync --apply`). It shows `git status` and asks before writing. |
 | `ctrl-o` | Open the thread on ampcode.com |
-| `ctrl-a` | Show all threads, not only orbs |
-| `ctrl-r` | Refresh |
+| `ctrl-a` | Switch between orb threads (`orb>`) and all threads (`all>`) |
+| `ctrl-r` | Refresh, keeping the current list |
 
 `●` means the agent is working and `○` means idle.
 
