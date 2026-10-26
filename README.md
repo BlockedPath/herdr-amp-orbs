@@ -17,14 +17,14 @@ Keys in the orb popup:
 
 | Key | Action |
 |---|---|
-| `enter` | Attach to the thread in a new pane, or jump to its pane if it is already open (`⧉ open`) |
+| `enter` | Attach to the thread in a new pane, or jump to its pane if it is already open (`⧉`) |
 | `ctrl-n` | New orb |
 | `ctrl-s` | Apply the orb's working-tree changes once to the focused pane's checkout (`amp sync --apply`). It shows `git status` and asks before writing. |
 | `ctrl-o` | Open the thread on ampcode.com |
 | `ctrl-a` | Switch between orb threads (`orb>`) and all threads (`all>`) |
 | `ctrl-r` | Refresh, keeping the current list |
 
-`●` means the agent is working and `○` means idle.
+`●` means the agent is working and `○` means idle. `⧉` after it means the thread is already open in a pane.
 
 ## Requirements
 
@@ -83,4 +83,4 @@ Attaching was tested on a live orb. The TUI joins as a client and the orb stays 
 
 ## Known limits
 
-- A new orb's pane is named `orb-new-XXXX` for its whole life. The thread ID is not known until the first prompt, so the popup does not mark it `⧉ open`.
+- A new orb's pane is named `orb-new-XXXX` for its whole life. The thread ID is not known until the first prompt, so the popup does not mark it `⧉`.
