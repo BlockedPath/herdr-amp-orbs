@@ -219,11 +219,11 @@ cmd_list() {
     | .[]
     | agent_name as $name
     | [ .id,
-        ((if .working then "●" else "○" end) + " "
+        ((if .working then "●" else "○" end)
+         + (if ($agents | index($name)) then " ⧉ " else "   " end)
          + ((.title // .id) | pad(40)) + "  "
          + ((.project // ((.tree // "") | split("/") | last) // "-") | pad(18)) + "  "
-         + ((.updated // .updatedAt // "") | if . == "" then "" else age end | pad(4))
-         + (if ($agents | index($name)) then "  ⧉ open" else "" end))
+         + ((.updated // .updatedAt // "") | if . == "" then "" else age end))
       ]
     | @tsv'
 }
